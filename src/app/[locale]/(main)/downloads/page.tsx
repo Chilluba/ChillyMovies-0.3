@@ -18,6 +18,7 @@ import type { TorrentProgress, HistoryItem } from "@/lib/webtorrent-service";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { formatBytes } from "@/lib/utils";
+import { useRef } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,21 +39,17 @@ interface DownloadsPageProps {
   params: { locale: Locale };
 }
 
-// Temporary placeholder type until Aria2 integration is complete
-interface StubbedAria2DownloadItemDisplay {
-  taskId: string;
-  name: string;
-  status: 'active' | 'waiting' | 'paused' | 'error' | 'complete' | 'removed' | 'connecting';
-  progress: number;
-  downloadSpeed: number;
-  uploadSpeed: number;
-  totalLength?: number;
-  completedLength?: number;
-  connections?: number;
-  downloadUrl?: string;
+interface Aria2DownloadItem {
+  gid: string;
+  status: string;
+  totalLength: string;
+  completedLength: string;
+  downloadSpeed: string;
+  uploadSpeed: string;
+  connections: string;
+  files: { path: string }[];
+  bittorrent?: { info?: { name?: string } };
   errorMessage?: string;
-  quality?: string;
-  addedTime?: number;
 }
 
 export default function DownloadsPage(props: DownloadsPageProps) {
@@ -60,8 +57,8 @@ export default function DownloadsPage(props: DownloadsPageProps) {
   const { toast } = useToast();
 
   const { torrents: activeWebTorrents, pauseTorrent, resumeTorrent, removeTorrent, history: webTorrentHistory, clearHistory, removeFromHistory } = useWebTorrent();
-  // server downloads remain stubbed
-  const [displayedAria2Downloads, setDisplayedAria2Downloads] = useState<StubbedAria2DownloadItemDisplay[]>([]);
+  const [aria2Downloads, setAria2Downloads] = useState<Aria2DownloadItem[]>([]);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
   // const [isLoadingAria2, setIsLoadingAria2] = useState(false); // Stubbed
   const [dictionary, setDictionary] = useState<any>(null);
 
@@ -75,11 +72,28 @@ export default function DownloadsPage(props: DownloadsPageProps) {
     fetchDict();
   }, [locale]);
 
+  // Poll Aria2 status every 3 seconds
   useEffect(() => {
-     if (dictionary) {
-        setDisplayedAria2Downloads([]); // still stubbed
-     }
-  }, [dictionary]);
+    let stopped = false;
+    async function fetchAria2() {
+      try {
+        const res = await fetch('/api/aria2/status');
+        if (!res.ok) throw new Error('Failed to fetch Aria2 status');
+        const data = await res.json();
+        // Merge all tasks
+        const all = [...(data.active || []), ...(data.waiting || []), ...(data.stopped || [])];
+        setAria2Downloads(all);
+      } catch (e) {
+        // Optionally show a toast
+      }
+    }
+    fetchAria2();
+    pollingRef.current = setInterval(fetchAria2, 3000);
+    return () => {
+      stopped = true;
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
 
 
   const getStatusInfo = (status: any, noPeersReason?: string) => {
@@ -130,6 +144,16 @@ export default function DownloadsPage(props: DownloadsPageProps) {
   };
   const handleResumeWebTorrent = (torrentId: string) => {
      resumeTorrent(torrentId);
+  };
+  // Aria2 controls
+  const handlePauseAria2 = async (gid: string) => {
+    await fetch('/api/aria2/pause', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gid }) });
+  };
+  const handleResumeAria2 = async (gid: string) => {
+    await fetch('/api/aria2/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gid }) });
+  };
+  const handleRemoveAria2 = async (gid: string) => {
+    await fetch('/api/aria2/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gid }) });
   };
   const handleOpenAria2File = (downloadUrl?: string) => showStubToast('Open Server File', downloadUrl || 'file');
   // clearHistory & removeFromHistory come from context
@@ -230,48 +254,47 @@ export default function DownloadsPage(props: DownloadsPageProps) {
               <CardTitle>{dictionary.serverDownloads.title}</CardTitle>
               <CardDescription className="text-xs">{dictionary.serverDownloads.description}</CardDescription>
             </CardHeader>
-             <CardContent className="p-0">
-              {/* {isLoadingAria2 && displayedAria2Downloads.length === 0 && (
-                <div className="text-center py-12 px-6"><Loader2Icon className="mx-auto h-12 w-12 text-primary animate-spin mb-4" /><p className="text-muted-foreground">{dictionary.serverDownloads.loadingStatus}</p></div>
-              )} */}
-              {/*!isLoadingAria2 &&*/ displayedAria2Downloads.length === 0 && (
-                 <div className="text-center py-12 px-6">
+            <CardContent className="p-0">
+              {aria2Downloads.length === 0 && (
+                <div className="text-center py-12 px-6">
                   <ServerIcon className="mx-auto h-16 w-16 text-muted-foreground/50 mb-4" />
                   <h3 className="text-xl font-semibold text-muted-foreground">{dictionary.serverDownloads.noActiveTitle}</h3>
                   <p className="text-muted-foreground mt-1">{dictionary.serverDownloads.noActiveDescription}</p>
                 </div>
               )}
-              {displayedAria2Downloads.length > 0 && (
-                 <div className="divide-y divide-border/30">
-                  {displayedAria2Downloads.map((download) => {
-                     const { badge: statusBadge, icon: statusIcon } = getStatusInfo(download.status);
-                     return (
-                       <div key={download.taskId} className="p-4 md:p-6 hover:bg-muted/30">
-                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                           <div className="flex-grow min-w-0">
-                             <h3 className="font-semibold text-md md:text-lg truncate mb-1" title={download.name}>{download.name}</h3>
-                             <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs md:text-sm text-muted-foreground">
-                               <span className="flex items-center gap-1.5">{statusIcon}{statusBadge}</span>
-                               {download.quality && <span>{download.quality}</span>}
-                               <span className="hidden sm:inline">&bull;</span>
-                               <span>{formatBytes(download.completedLength || 0)} / {download.totalLength ? formatBytes(download.totalLength) : dictionary.na}</span>
-                               {download.status === 'active' && download.downloadSpeed > 0 && <span>{formatBytes(download.downloadSpeed)}/s</span>}
-                               {download.status === 'active' && download.connections !== undefined && <><span className="hidden sm:inline">&bull;</span>{dictionary.peersLabel}: {download.connections}</>}
-                             </div>
-                           </div>
-                           <div className="flex items-center gap-1 flex-shrink-0 mt-2 sm:mt-0 self-start sm:self-center">
-                             {download.status === 'active' && <Button variant="ghost" size="icon" title={dictionary.pauseLabel} onClick={() => handlePauseAria2(download.taskId)}><PauseCircleIcon className="h-5 w-5" /></Button>}
-                             {download.status === 'paused' && <Button variant="ghost" size="icon" title={dictionary.resumeLabel} onClick={() => handleResumeAria2(download.taskId)}><PlayCircleIcon className="h-5 w-5" /></Button>}
-                             {download.status === 'complete' && download.downloadUrl && <Button variant="ghost" size="icon" title={dictionary.downloadFileLabel} onClick={() => handleOpenAria2File(download.downloadUrl)}><FolderOpenIcon className="h-5 w-5" /></Button>}
-                             <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80" title={dictionary.removeTaskLabel} onClick={() => handleRemoveAria2(download.taskId)}><XCircleIcon className="h-5 w-5" /></Button>
-                           </div>
-                         </div>
-                         <Progress value={download.progress} className="mt-3 h-1.5 md:h-2" indicatorClassName={download.status === 'paused' ? 'bg-yellow-500' : (download.status === 'error') ? 'bg-red-500' : (download.status === 'complete') ? 'bg-green-500' : 'bg-primary'}/>
-                         {download.errorMessage && <p className="text-xs text-destructive mt-1">{download.errorMessage}</p>}
-                       </div>
-                     );
+              {aria2Downloads.length > 0 && (
+                <div className="divide-y divide-border/30">
+                  {aria2Downloads.map((download) => {
+                    const { badge: statusBadge, icon: statusIcon } = getStatusInfo(download.status);
+                    const name = download.bittorrent?.info?.name || download.files?.[0]?.path?.split('/').pop() || download.gid;
+                    const total = Number(download.totalLength || 0);
+                    const completed = Number(download.completedLength || 0);
+                    const progress = total > 0 ? (completed / total) * 100 : 0;
+                    return (
+                      <div key={download.gid} className="p-4 md:p-6 hover:bg-muted/30">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                          <div className="flex-grow min-w-0">
+                            <h3 className="font-semibold text-md md:text-lg truncate mb-1" title={name}>{name}</h3>
+                            <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs md:text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1.5">{statusIcon}{statusBadge}</span>
+                              <span>{formatBytes(completed)} / {total ? formatBytes(total) : dictionary.na}</span>
+                              {download.status === 'active' && Number(download.downloadSpeed) > 0 && <span>{formatBytes(Number(download.downloadSpeed))}/s</span>}
+                              {download.status === 'active' && download.connections !== undefined && <><span className="hidden sm:inline">&bull;</span>{dictionary.peersLabel}: {download.connections}</>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0 mt-2 sm:mt-0 self-start sm:self-center">
+                            {download.status === 'active' && <Button variant="ghost" size="icon" title={dictionary.pauseLabel} onClick={() => handlePauseAria2(download.gid)}><PauseCircleIcon className="h-5 w-5" /></Button>}
+                            {download.status === 'paused' && <Button variant="ghost" size="icon" title={dictionary.resumeLabel} onClick={() => handleResumeAria2(download.gid)}><PlayCircleIcon className="h-5 w-5" /></Button>}
+                            {download.status === 'complete' && download.files?.[0]?.path && <Button variant="ghost" size="icon" title={dictionary.downloadFileLabel} onClick={() => handleOpenAria2File(download.files[0].path)}><FolderOpenIcon className="h-5 w-5" /></Button>}
+                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80" title={dictionary.removeTaskLabel} onClick={() => handleRemoveAria2(download.gid)}><XCircleIcon className="h-5 w-5" /></Button>
+                          </div>
+                        </div>
+                        <Progress value={progress} className="mt-3 h-1.5 md:h-2" indicatorClassName={download.status === 'paused' ? 'bg-yellow-500' : (download.status === 'error') ? 'bg-red-500' : (download.status === 'complete') ? 'bg-green-500' : 'bg-primary'}/>
+                        {download.errorMessage && <p className="text-xs text-destructive mt-1">{download.errorMessage}</p>}
+                      </div>
+                    );
                   })}
-                 </div>
+                </div>
               )}
             </CardContent>
           </Card>

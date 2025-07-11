@@ -15,8 +15,13 @@ function createWindow() {
     show: false,
   });
 
-  // Load local Next.js app (assume running on localhost:3000 in dev)
-  mainWindow.loadURL('http://localhost:3000');
+  if (process.env.NODE_ENV === 'development') {
+    // Load local Next.js app in dev
+    mainWindow.loadURL('http://localhost:3000');
+  } else {
+    // Load the production build (static export)
+    mainWindow.loadFile(path.join(__dirname, 'out', 'index.html'));
+  }
 
   mainWindow.once('ready-to-show', () => {
     if (mainWindow) mainWindow.show();

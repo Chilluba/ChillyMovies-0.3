@@ -16,6 +16,30 @@
     "dev:electron": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build:electron": "next build && electron-builder"
   },
+  "main": "main.js",
+  "build": {
+    "appId": "com.chillymovies.app",
+    "productName": "Chilly Movies",
+    "files": [
+      "main.js",
+      "preload.js",
+      "out/**",
+      "node_modules/**",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "mac": {
+      "target": ["dmg", "zip"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb", "rpm"]
+    }
+  },
   "dependencies": {
     "@formatjs/intl-localematcher": "^0.5.4",
     "@genkit-ai/googleai": "^1.8.0",

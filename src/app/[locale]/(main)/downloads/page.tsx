@@ -18,7 +18,7 @@ import type { TorrentProgress, HistoryItem } from "@/lib/webtorrent-service";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { formatBytes } from "@/lib/utils";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { Locale } from '@/config/i18n.config';
 import { getDictionary } from '@/lib/getDictionary';
+import ytdl from 'ytdl-core';
 
 // Removed stubbed types, using actual ones
 
@@ -52,6 +53,15 @@ interface Aria2DownloadItem {
   errorMessage?: string;
 }
 
+interface YoutubeDownload {
+  url: string;
+  title: string;
+  thumbnail: string;
+  status: 'pending' | 'downloading' | 'done' | 'error';
+  progress: number;
+  error?: string;
+}
+
 export default function DownloadsPage(props: DownloadsPageProps) {
   const { locale } = use(props.params);
   const { toast } = useToast();
@@ -61,6 +71,11 @@ export default function DownloadsPage(props: DownloadsPageProps) {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   // const [isLoadingAria2, setIsLoadingAria2] = useState(false); // Stubbed
   const [dictionary, setDictionary] = useState<any>(null);
+
+  // YouTube download state
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [youtubeDownloads, setYoutubeDownloads] = useState<YoutubeDownload[]>([]);
+  const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
 
   useEffect(() => {
     const fetchDict = async () => {
@@ -161,6 +176,50 @@ export default function DownloadsPage(props: DownloadsPageProps) {
     removeFromHistory(infoHash);
   };
 
+  // Handle YouTube download
+  const handleYoutubeDownload = async () => {
+    if (!youtubeUrl) return;
+    setIsYoutubeLoading(true);
+    let info: any = null;
+    try {
+      // Fetch video info for title/thumbnail
+      const infoRes = await fetch(`/api/youtube/video-info?url=${encodeURIComponent(youtubeUrl)}`);
+      info = await infoRes.json();
+      const title = info.title || youtubeUrl;
+      const thumbnail = info.thumbnail || '';
+      setYoutubeDownloads((prev) => [
+        { url: youtubeUrl, title, thumbnail, status: 'downloading', progress: 0 },
+        ...prev,
+      ]);
+      // Start download
+      const res = await fetch('/api/youtube/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: youtubeUrl }),
+      });
+      if (res.ok) {
+        // Download started, but we can't track progress in browser fetch easily
+        setYoutubeDownloads((prev) => prev.map((d, i) => i === 0 ? { ...d, status: 'done', progress: 100 } : d));
+        // Optionally trigger browser download
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${title}.mp4`;
+        a.click();
+      } else {
+        const err = await res.json();
+        setYoutubeDownloads((prev) => prev.map((d, i) => i === 0 ? { ...d, status: 'error', error: err.error || 'Download failed' } : d));
+      }
+    } catch (e: any) {
+      setYoutubeDownloads((prev) => prev.map((d, i) => i === 0 ? { ...d, status: 'error', error: e.message || 'Error' } : d));
+    } finally {
+      setIsYoutubeLoading(false);
+    }
+  };
+  const handleRemoveYoutubeDownload = (idx: number) => {
+    setYoutubeDownloads((prev) => prev.filter((_, i) => i !== idx));
+  };
+
 
   if (!dictionary || !locale) {
     return (
@@ -181,9 +240,10 @@ export default function DownloadsPage(props: DownloadsPageProps) {
       </div>
 
       <Tabs defaultValue="webtorrent_active" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 gap-x-1.5 rounded-lg p-1.5 bg-muted h-auto md:h-12 text-base">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 gap-x-1.5 rounded-lg p-1.5 bg-muted h-auto md:h-12 text-base">
           <TabsTrigger value="webtorrent_active" className="h-full py-2.5 px-2 md:px-3">{dictionary.tabs.webTorrents}</TabsTrigger>
           <TabsTrigger value="server_downloads" className="h-full py-2.5 px-2 md:px-3">{dictionary.tabs.serverDownloads}</TabsTrigger>
+          <TabsTrigger value="youtube" className="h-full py-2.5 px-2 md:px-3">YouTube</TabsTrigger>
           <TabsTrigger value="history" className="h-full py-2.5 px-2 md:px-3 col-span-2 md:col-span-1">{dictionary.tabs.history}</TabsTrigger>
         </TabsList>
 
@@ -296,6 +356,47 @@ export default function DownloadsPage(props: DownloadsPageProps) {
                   })}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="youtube" className="mt-8">
+          <Card className="shadow-lg border-border/40 overflow-hidden">
+            <CardHeader>
+              <CardTitle>YouTube Downloader</CardTitle>
+              <CardDescription>Paste a YouTube URL to download as MP4.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                <input
+                  type="text"
+                  className="flex-1 border rounded px-3 py-2"
+                  placeholder="YouTube URL"
+                  value={youtubeUrl}
+                  onChange={e => setYoutubeUrl(e.target.value)}
+                  disabled={isYoutubeLoading}
+                />
+                <Button onClick={handleYoutubeDownload} disabled={isYoutubeLoading || !youtubeUrl}>
+                  {isYoutubeLoading ? <Loader2Icon className="animate-spin h-5 w-5" /> : 'Download'}
+                </Button>
+              </div>
+              <div className="space-y-4">
+                {youtubeDownloads.map((d, idx) => (
+                  <div key={d.url + idx} className="flex items-center gap-4 p-3 border rounded">
+                    {d.thumbnail && <img src={d.thumbnail} alt="thumbnail" className="w-16 h-10 object-cover rounded" />}
+                    <div className="flex-1">
+                      <div className="font-semibold truncate">{d.title}</div>
+                      <div className="text-xs text-muted-foreground truncate">{d.url}</div>
+                      <Progress value={d.progress} className="mt-1 h-1.5" />
+                      {d.status === 'error' && <div className="text-xs text-destructive mt-1">{d.error}</div>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={d.status === 'done' ? 'default' : d.status === 'error' ? 'destructive' : 'secondary'}>{d.status}</Badge>
+                      <Button variant="ghost" size="icon" onClick={() => handleRemoveYoutubeDownload(idx)}><XCircleIcon className="h-5 w-5" /></Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

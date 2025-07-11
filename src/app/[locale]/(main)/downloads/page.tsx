@@ -33,6 +33,7 @@ import {
 import type { Locale } from '@/config/i18n.config';
 import { getDictionary } from '@/lib/getDictionary';
 import ytdl from 'ytdl-core';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Removed stubbed types, using actual ones
 
@@ -62,6 +63,14 @@ interface YoutubeDownload {
   error?: string;
 }
 
+type YoutubeQuality = '360p' | '720p' | '1080p';
+
+interface YoutubeHistoryItem extends YoutubeDownload {
+  date: string;
+}
+
+const YOUTUBE_HISTORY_KEY = 'chillymovies-youtube-history';
+
 export default function DownloadsPage(props: DownloadsPageProps) {
   const { locale } = use(props.params);
   const { toast } = useToast();
@@ -76,6 +85,19 @@ export default function DownloadsPage(props: DownloadsPageProps) {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeDownloads, setYoutubeDownloads] = useState<YoutubeDownload[]>([]);
   const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
+
+  // Quality and audio-only state
+  const [youtubeQuality, setYoutubeQuality] = useState<YoutubeQuality>('720p');
+  const [youtubeAudioOnly, setYoutubeAudioOnly] = useState(false);
+  // Persistent history
+  const [youtubeHistory, setYoutubeHistory] = useState<YoutubeHistoryItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return JSON.parse(localStorage.getItem(YOUTUBE_HISTORY_KEY) || '[]');
+      } catch { return []; }
+    }
+    return [];
+  });
 
   useEffect(() => {
     const fetchDict = async () => {
@@ -177,6 +199,15 @@ export default function DownloadsPage(props: DownloadsPageProps) {
   };
 
   // Handle YouTube download
+  const saveYoutubeHistory = (item: YoutubeDownload) => {
+    const entry: YoutubeHistoryItem = { ...item, date: new Date().toISOString() };
+    setYoutubeHistory((prev) => {
+      const updated = [entry, ...prev].slice(0, 50);
+      localStorage.setItem(YOUTUBE_HISTORY_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const handleYoutubeDownload = async () => {
     if (!youtubeUrl) return;
     setIsYoutubeLoading(true);
@@ -195,17 +226,16 @@ export default function DownloadsPage(props: DownloadsPageProps) {
       const res = await fetch('/api/youtube/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: youtubeUrl }),
+        body: JSON.stringify({ url: youtubeUrl, quality: youtubeQuality, audioOnly: youtubeAudioOnly }),
       });
       if (res.ok) {
-        // Download started, but we can't track progress in browser fetch easily
         setYoutubeDownloads((prev) => prev.map((d, i) => i === 0 ? { ...d, status: 'done', progress: 100 } : d));
-        // Optionally trigger browser download
         const blob = await res.blob();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `${title}.mp4`;
+        a.download = `${title}.${youtubeAudioOnly ? 'mp3' : 'mp4'}`;
         a.click();
+        saveYoutubeHistory({ url: youtubeUrl, title, thumbnail, status: 'done', progress: 100 });
       } else {
         const err = await res.json();
         setYoutubeDownloads((prev) => prev.map((d, i) => i === 0 ? { ...d, status: 'error', error: err.error || 'Download failed' } : d));
@@ -364,7 +394,7 @@ export default function DownloadsPage(props: DownloadsPageProps) {
           <Card className="shadow-lg border-border/40 overflow-hidden">
             <CardHeader>
               <CardTitle>YouTube Downloader</CardTitle>
-              <CardDescription>Paste a YouTube URL to download as MP4.</CardDescription>
+              <CardDescription>Paste a YouTube URL to download as MP4 or MP3. Choose quality and format.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -376,6 +406,20 @@ export default function DownloadsPage(props: DownloadsPageProps) {
                   onChange={e => setYoutubeUrl(e.target.value)}
                   disabled={isYoutubeLoading}
                 />
+                <Select value={youtubeQuality} onValueChange={v => setYoutubeQuality(v as YoutubeQuality)}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue placeholder="Quality" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="360p">MP4 360p</SelectItem>
+                    <SelectItem value="720p">MP4 720p</SelectItem>
+                    <SelectItem value="1080p">MP4 1080p</SelectItem>
+                  </SelectContent>
+                </Select>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={youtubeAudioOnly} onChange={e => setYoutubeAudioOnly(e.target.checked)} />
+                  MP3
+                </label>
                 <Button onClick={handleYoutubeDownload} disabled={isYoutubeLoading || !youtubeUrl}>
                   {isYoutubeLoading ? <Loader2Icon className="animate-spin h-5 w-5" /> : 'Download'}
                 </Button>
@@ -396,6 +440,23 @@ export default function DownloadsPage(props: DownloadsPageProps) {
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="mt-8">
+                <h4 className="font-semibold mb-2">Download History</h4>
+                <div className="space-y-2">
+                  {youtubeHistory.length === 0 && <div className="text-muted-foreground text-sm">No YouTube downloads yet.</div>}
+                  {youtubeHistory.map((item, idx) => (
+                    <div key={item.url + item.date + idx} className="flex items-center gap-4 p-2 border rounded">
+                      {item.thumbnail && <img src={item.thumbnail} alt="thumbnail" className="w-12 h-8 object-cover rounded" />}
+                      <div className="flex-1">
+                        <div className="font-semibold truncate">{item.title}</div>
+                        <div className="text-xs text-muted-foreground truncate">{item.url}</div>
+                        <div className="text-xs text-muted-foreground">{new Date(item.date).toLocaleString()}</div>
+                      </div>
+                      <Badge variant="default">done</Badge>
+                    </div>
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>

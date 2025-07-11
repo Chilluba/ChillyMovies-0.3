@@ -1,7 +1,7 @@
 // src/app/[locale]/(main)/downloads/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, use } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-// import { useWebTorrent } from "@/contexts/WebTorrentContext"; // Stubbed out
-// import type { TorrentProgress, HistoryItem, TorrentFile as WebTorrentTorrentFile, TorrentProgressStatus } from "@/lib/webtorrent-service"; // Stubbed out
+import { useWebTorrent } from "@/contexts/WebTorrentContext";
+import type { TorrentProgress, HistoryItem } from "@/lib/webtorrent-service";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { formatBytes } from "@/lib/utils";
@@ -29,46 +29,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-// import type { ConceptualAria2Task, Aria2DownloadItemDisplay } from "@/types/download"; // Stubbed out
 import type { Locale } from '@/config/i18n.config';
 import { getDictionary } from '@/lib/getDictionary';
 
-// --- Start: Types that would come from stubbed files ---
-// These are simplified versions for the UI template
-interface StubbedTorrentProgress {
-  torrentId: string;
-  progress: number;
-  downloadSpeed: number;
-  uploadSpeed: number;
-  peers: number;
-  remainingTime?: number;
-  downloaded: number;
-  length?: number;
-  customName?: string;
-  addedDate?: Date;
-  itemId?: string | number;
-  status: 'idle' | 'downloading' | 'seeding' | 'paused' | 'error' | 'connecting' | 'done' | 'metadata' | 'stalled' | 'no_peers';
-  noPeersReason?: string;
+// Removed stubbed types, using actual ones
+
+interface DownloadsPageProps {
+  params: { locale: Locale };
 }
-interface StubbedHistoryItem {
-  infoHash: string;
-  magnetURI: string;
-  name: string;
-  itemId?: string | number;
-  addedDate: string;
-  completedDate?: string;
-  status: 'completed' | 'failed' | 'removed' | 'active' | 'error' | 'stalled';
-  size?: number;
-  lastError?: string;
-}
-interface StubbedConceptualAria2Task {
-  taskId: string;
-  name: string;
-  quality: string;
-  addedTime: number;
-  sourceUrlOrIdentifier: string;
-  type: 'magnet' | 'imdb_id' | 'tv_episode' | 'tv_season_pack' | 'tv_season_pack_all';
-}
+
+// Temporary placeholder type until Aria2 integration is complete
 interface StubbedAria2DownloadItemDisplay {
   taskId: string;
   name: string;
@@ -80,26 +50,17 @@ interface StubbedAria2DownloadItemDisplay {
   completedLength?: number;
   connections?: number;
   downloadUrl?: string;
-  errorCode?: string;
   errorMessage?: string;
   quality?: string;
   addedTime?: number;
-}
-// --- End: Types ---
-
-
-// const ARIA2_TASKS_STORAGE_KEY = 'chillymovies-aria2-tasks'; // Stubbed
-
-interface DownloadsPageProps {
-  params: { locale: Locale };
 }
 
 export default function DownloadsPage(props: DownloadsPageProps) {
   const { locale } = use(props.params);
   const { toast } = useToast();
 
-  const [activeWebTorrents, setActiveWebTorrents] = useState<StubbedTorrentProgress[]>([]);
-  const [webTorrentHistory, setWebTorrentHistory] = useState<StubbedHistoryItem[]>([]);
+  const { torrents: activeWebTorrents, pauseTorrent, resumeTorrent, removeTorrent, history: webTorrentHistory, clearHistory, removeFromHistory } = useWebTorrent();
+  // server downloads remain stubbed
   const [displayedAria2Downloads, setDisplayedAria2Downloads] = useState<StubbedAria2DownloadItemDisplay[]>([]);
   // const [isLoadingAria2, setIsLoadingAria2] = useState(false); // Stubbed
   const [dictionary, setDictionary] = useState<any>(null);
@@ -114,23 +75,14 @@ export default function DownloadsPage(props: DownloadsPageProps) {
     fetchDict();
   }, [locale]);
 
-  // Stubbed: Data fetching logic removed, using placeholder/empty data
   useEffect(() => {
-    if (dictionary) { // Simulate loading placeholder data once dictionary is ready
-        setActiveWebTorrents([
-            // { torrentId: 'webtorrent-1', customName: 'Example Movie (WebTorrent)', progress: 0.6, downloadSpeed: 1200000, uploadSpeed: 50000, peers: 10, downloaded: 600000000, length: 1000000000, status: 'downloading', addedDate: new Date() },
-        ]);
-        setWebTorrentHistory([
-            // { infoHash: 'history-1', magnetURI: 'magnet:?xt=urn:btih:history1', name: 'Old Downloaded Movie', addedDate: new Date(Date.now() - 86400000 * 2).toISOString(), completedDate: new Date(Date.now() - 86400000).toISOString(), status: 'completed', size: 1500000000 },
-        ]);
-        setDisplayedAria2Downloads([
-            // { taskId: 'aria2-1', name: 'Example Series S01E01 (Server)', status: 'active', progress: 75, downloadSpeed: 2500000, uploadSpeed: 100000, quality: '1080p', addedTime: Date.now() - 3600000, completedLength: 750000000, totalLength: 1000000000 },
-        ]);
-    }
+     if (dictionary) {
+        setDisplayedAria2Downloads([]); // still stubbed
+     }
   }, [dictionary]);
 
 
-  const getStatusInfo = (status: StubbedTorrentProgress['status'] | StubbedHistoryItem['status'] | StubbedAria2DownloadItemDisplay['status'], noPeersReason?: string) => {
+  const getStatusInfo = (status: any, noPeersReason?: string) => {
     const statusKey = status?.toLowerCase().replace(/_/g, '') || 'unknown';
     const label = dictionary?.statusLabels?.[statusKey] || `Unknown (${status})`;
     
@@ -164,20 +116,26 @@ export default function DownloadsPage(props: DownloadsPageProps) {
     });
   };
   const handlePlayWebTorrent = (torrentIdOrMagnet: string) => showStubToast('Play WebTorrent', torrentIdOrMagnet);
-  const handleRetryWebTorrentDownload = (item: StubbedHistoryItem) => showStubToast('Retry WebTorrent', item.name);
-  const handleRemoveWebTorrent = (torrentId: string) => showStubToast('Remove WebTorrent', torrentId);
-  const handlePauseAria2 = (taskId: string) => showStubToast('Pause Server Download', taskId);
-  const handleResumeAria2 = (taskId: string) => showStubToast('Resume Server Download', taskId);
-  const handleRemoveAria2 = (taskId: string) => showStubToast('Remove Server Download', taskId);
+  const handleRetryWebTorrentDownload = (item: HistoryItem) => {
+     if (item.magnetURI) {
+       // attempt add torrent again
+       useWebTorrent().addTorrent(item.magnetURI, item.name, item.itemId).catch(()=>{});
+     }
+  };
+  const handleRemoveWebTorrent = (torrentId: string) => {
+     removeTorrent(torrentId).catch(()=>{});
+  };
+  const handlePauseWebTorrent = (torrentId: string) => {
+     pauseTorrent(torrentId);
+  };
+  const handleResumeWebTorrent = (torrentId: string) => {
+     resumeTorrent(torrentId);
+  };
   const handleOpenAria2File = (downloadUrl?: string) => showStubToast('Open Server File', downloadUrl || 'file');
-  const clearDownloadHistory = () => {
-    setWebTorrentHistory([]);
-    showStubToast('Clear Download History');
-  }
+  // clearHistory & removeFromHistory come from context
   const removeDownloadFromHistory = (infoHash: string) => {
-    setWebTorrentHistory(prev => prev.filter(item => item.infoHash !== infoHash));
-    showStubToast('Remove from History', infoHash);
-  }
+    removeFromHistory(infoHash);
+  };
 
 
   if (!dictionary || !locale) {
@@ -232,10 +190,10 @@ export default function DownloadsPage(props: DownloadsPageProps) {
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0 mt-2 sm:mt-0 self-start sm:self-center">
                             {(download.status === 'downloading' || download.status === 'connecting' || download.status === 'metadata' || download.status === 'stalled' || download.status === 'no_peers') && (
-                              <Button variant="ghost" size="icon" aria-label={dictionary.pauseLabel} onClick={() => showStubToast('Pause', download.customName)}><PauseCircleIcon className="h-5 w-5" /></Button>
+                              <Button variant="ghost" size="icon" aria-label={dictionary.pauseLabel} onClick={() => handlePauseWebTorrent(download.torrentId)}><PauseCircleIcon className="h-5 w-5" /></Button>
                             )}
                             {download.status === 'paused' && (
-                              <Button variant="ghost" size="icon" aria-label={dictionary.resumeLabel} onClick={() => showStubToast('Resume', download.customName)}><PlayCircleIcon className="h-5 w-5" /></Button>
+                              <Button variant="ghost" size="icon" aria-label={dictionary.resumeLabel} onClick={() => handleResumeWebTorrent(download.torrentId)}><PlayCircleIcon className="h-5 w-5" /></Button>
                             )}
                             {(download.status === 'done' || download.status === 'seeding' || (download.status === 'downloading' && download.progress > 0.01)) && (
                               <Button variant="ghost" size="icon" aria-label={dictionary.playStreamLabel} onClick={() => handlePlayWebTorrent(download.torrentId)}><PlayCircleIcon className="h-5 w-5" /></Button>
@@ -332,7 +290,7 @@ export default function DownloadsPage(props: DownloadsPageProps) {
                             <AlertDialogHeader><AlertDialogTitle>{dictionary.history.alertTitle}</AlertDialogTitle><AlertDialogDescription>{dictionary.history.alertDescription}</AlertDialogDescription></AlertDialogHeader>
                             <AlertDialogFooter>
                                 <AlertDialogCancel>{dictionary.history.alertCancel}</AlertDialogCancel>
-                                <AlertDialogAction onClick={clearDownloadHistory}>{dictionary.history.alertConfirm}</AlertDialogAction>
+                                <AlertDialogAction onClick={clearHistory}>{dictionary.history.alertConfirm}</AlertDialogAction>
                             </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>

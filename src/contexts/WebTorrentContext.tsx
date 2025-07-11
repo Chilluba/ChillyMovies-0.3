@@ -14,6 +14,9 @@ interface WebTorrentContextType {
   pauseTorrent: (infoHashOrMagnetURI: string) => void;
   resumeTorrent: (infoHashOrMagnetURI: string) => void;
   isClientReady: boolean;
+  history: import("@/lib/webtorrent-service").HistoryItem[];
+  clearHistory?: () => void;
+  removeFromHistory?: (infoHash: string) => void;
 }
 
 const WebTorrentContext = createContext<WebTorrentContextType | undefined>(undefined);
@@ -27,6 +30,7 @@ export const useWebTorrent = () => {
 export const WebTorrentProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isClientReady, setIsClientReady] = useState(false);
   const [torrents, setTorrents] = useState<TorrentProgress[]>([]);
+  const [history, setHistory] = useState<import("@/lib/webtorrent-service").HistoryItem[]>([]);
 
   // Initialise client once mounted (client-side only)
   useEffect(() => {
@@ -46,6 +50,14 @@ export const WebTorrentProvider: React.FC<{ children: ReactNode }> = ({ children
       });
     });
 
+    useEffect(() => {
+      setHistory(webTorrentService.getDownloadHistory());
+      const offHist = webTorrentService.onHistoryUpdated(() => {
+        setHistory(webTorrentService.getDownloadHistory());
+      });
+      return () => offHist();
+    }, []);
+
     return () => {
       offProgress();
     };
@@ -58,6 +70,9 @@ export const WebTorrentProvider: React.FC<{ children: ReactNode }> = ({ children
     pauseTorrent: webTorrentService.pauseTorrent.bind(webTorrentService),
     resumeTorrent: webTorrentService.resumeTorrent.bind(webTorrentService),
     isClientReady,
+    history,
+    clearHistory: webTorrentService.clearHistory.bind(webTorrentService),
+    removeFromHistory: webTorrentService.removeFromHistory.bind(webTorrentService),
   };
 
   return <WebTorrentContext.Provider value={value}>{children}</WebTorrentContext.Provider>;

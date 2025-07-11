@@ -177,6 +177,24 @@ class WebTorrentService {
   }
 
   /* ---------------------------------------------------------
+   * History public helpers
+   * ------------------------------------------------------ */
+  public getDownloadHistory(): HistoryItem[] {
+    return this.loadHistory();
+  }
+
+  public clearHistory() {
+    this.saveHistory([]);
+    this.emitter.emit("historyUpdated");
+  }
+
+  public removeFromHistory(infoHash: string) {
+    const history = this.loadHistory().filter((h) => h.infoHash !== infoHash);
+    this.saveHistory(history);
+    this.emitter.emit("historyUpdated");
+  }
+
+  /* ---------------------------------------------------------
    * Event helpers
    * ------------------------------------------------------ */
   private emitProgress(torrent: Torrent) {

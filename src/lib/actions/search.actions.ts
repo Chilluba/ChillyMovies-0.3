@@ -15,7 +15,7 @@ export interface SearchActionResult {
 }
 
 export async function handleSearch(
-  input: z.infer<typeof SearchActionInputSchema>
+  input: z.infer<typeof SearchActionInputSchema> & { language?: string }
 ): Promise<SearchActionResult> {
   try {
     const validatedInput = SearchActionInputSchema.parse(input);
@@ -24,7 +24,7 @@ export async function handleSearch(
       return { results: [] };
     }
 
-    const searchData = await searchMulti(validatedInput.query);
+    const searchData = await searchMulti(validatedInput.query, 1, input.language || 'en-US');
 
     const filteredResults = searchData.results.filter(
       (item): item is ClientTMDBMultiSearchResultItem =>

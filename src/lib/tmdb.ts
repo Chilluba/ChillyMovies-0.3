@@ -239,11 +239,16 @@ export async function getEpisodeMagnetLink(seriesTitle: string, seasonNumber: nu
   }
 }
 
-export async function searchMulti(query: string, page: number = 1): Promise<TMDBMultiPaginatedResponse> {
+export async function searchMulti(query: string, page: number = 1, language: string = 'en-US'): Promise<TMDBMultiPaginatedResponse> {
   if (!query.trim()) {
     return { page: 1, results: [], total_pages: 0, total_results: 0 };
   }
-  return fetchTMDB<TMDBMultiPaginatedResponse>('search/multi', { query, page });
+  let results = await fetchTMDB<TMDBMultiPaginatedResponse>('search/multi', { query, page, language });
+  // Fallback to English if Swahili returns no results
+  if (language.startsWith('sw') && (!results.results || results.results.length === 0)) {
+    results = await fetchTMDB<TMDBMultiPaginatedResponse>('search/multi', { query, page, language: 'en-US' });
+  }
+  return results;
 }
 
 export async function getMovieRecommendations(movieId: number | string, page: number = 1): Promise<TMDBPaginatedResponse<TMDBBaseMovie>> {

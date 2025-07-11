@@ -12,6 +12,17 @@ import { SearchResultItem } from "./SearchResultItem";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+function detectLanguage(query: string): string {
+  // Simple heuristic: if query contains Swahili-specific characters/words, return 'sw', else use browser or default to 'en-US'
+  // For now, use browser language
+  if (typeof navigator !== 'undefined') {
+    const lang = navigator.language || (navigator.languages && navigator.languages[0]);
+    if (lang && lang.startsWith('sw')) return 'sw';
+    return lang || 'en-US';
+  }
+  return 'en-US';
+}
+
 export function LiveSearch() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ClientTMDBMultiSearchResultItem[]>([]);
@@ -46,8 +57,8 @@ export function LiveSearch() {
     async function fetchResults() {
       setIsLoading(true);
       setError(null);
-      const actionResult: SearchActionResult = await handleSearch({ query: debouncedQuery });
-      
+      const language = detectLanguage(debouncedQuery);
+      const actionResult: SearchActionResult = await handleSearch({ query: debouncedQuery, language });
       if (actionResult.error) {
         setError(actionResult.error);
         setResults([]);

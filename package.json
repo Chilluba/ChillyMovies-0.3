@@ -63,7 +63,7 @@
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
     "torrent-search-api": "^2.1.4",
-    "webtorrent": "^2.6.3",
+    "webtorrent": "^1.10.0",
     "ytdl-core": "^4.11.5",
     "zod": "^3.24.2"
   },
